@@ -1,0 +1,38 @@
+body {
+    background-color: Black;
+    overflow: auto;
+    font-family: 'Courier New', Courier, monospace;
+    color: white;
+}
+
+.navega {
+    float: right;
+    width: 70px;
+}
+
+button {
+    height: 50px;
+    margin-top: 20px;
+    width: 70px;
+    font-size: 15px;
+}
+
+.letra {
+    margin-right: 70px;
+    text-align: center;
+    font-size: 25px;
+}
+
+h1 {
+    color: lightgray;
+    font-size: 25px;
+    margin: 0px;
+    padding: 0px;
+    text-align: left;
+}
+
+#agora p {
+    color: yellow;
+    font-weight: bold;
+
+}
