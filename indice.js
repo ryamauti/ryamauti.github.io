@@ -4,8 +4,7 @@ function carrega() {
             return res.json();
         })
         .then((data) => {
-            artistas(data);
-            console.log(data['Leandro & Leonardo']);
+            artistas(data);            
         })
 };
 
@@ -24,10 +23,13 @@ function artistas(data) {
 function musicas(data, artista) {    
     for (elem in data) {      
         let btn = document.createElement("button");
+        if (!('letra' in data[elem])) {
+            console.log('LETRA');
+            btn.style.backgroundColor = 'gray';
+        }
         btn.innerHTML = elem;
         btn.onclick = function() {
             location.href = './karaoke.html?artista=' + artista.replace("&", "_and_") + '&musica=' + btn.innerText;
-            // console.log(btn.innerText); 
             return false;};
         document.getElementById("musicas").appendChild(btn);
     }; 

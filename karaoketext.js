@@ -1,6 +1,5 @@
 // URL Parameters
 const queryString = window.location.search;
-console.log(queryString);
 const urlParams = new URLSearchParams(queryString);
 const artista = urlParams.get('artista').replace("_and_", "&");
 const musica = urlParams.get('musica');  
@@ -14,16 +13,40 @@ function carrega(artista, musica) {
         })
         .then((data) => {
             var key = data[artista][musica]['key'];
+            var low = data[artista][musica]['low'];
+            var high = data[artista][musica]['high'];
             var inicio = data[artista][musica]['main'].toString();
-            document.getElementById("titulo").innerHTML = "<h1>" + artista + " - " + musica + " - Tom: " + key + ". Início: " + inicio + "</h1>";
+            document.getElementById("titulo").innerHTML = "<h1>" + artista + " - " + musica + " - Tom: " + key + ". Range de " + low + " a " + high + ". Início: " + inicio + "</h1>";
             if ('url_mp3_30s' in data[artista][musica]) {
                 if (data[artista][musica]['url_mp3_30s']) {
                     let aud = document.createElement("audio");
                     aud.controls = true;
                     aud.src = data[artista][musica]['url_mp3_30s'];
                     document.getElementById("titulo").appendChild(aud);
-                }                
-            }            
+                }
+            };
+            // url_spotify
+            if ('url_spotify' in data[artista][musica]) {
+                let urlspot = data[artista][musica]['url_spotify'];
+                let btn = document.createElement("button");                    
+                btn.innerText = "Abrir Spotify Web";
+                if (urlspot) {
+                    btn.onclick = function() {
+                        window.open(data[artista][musica]['url_spotify']);
+                        };
+                    document.getElementsByClassName("navega")[0].appendChild(btn);
+            }};
+            // url_spotify_app
+            if ('spotify_app' in data[artista][musica]) {
+                let urlspot = data[artista][musica]['spotify_app'];
+                let btn = document.createElement("button");                    
+                btn.innerText = "Abrir no App Spotify";
+                if (urlspot) {
+                    btn.onclick = function() {
+                        window.open(data[artista][musica]['spotify_app']);
+                        };
+                    document.getElementsByClassName("navega")[0].appendChild(btn);
+            }};                                  
             return data[artista][musica]['letra'];            
         });
     return saida;
@@ -37,17 +60,12 @@ var maximo;
 s.then((value) => {    
     ar = value.split("\n");    
     maximo = ar.length - 1;
-    ar[maximo] = "-- fim --";
-    ar[maximo+1] = "";
-    ar[maximo+2] = "";
-    ar[maximo+3] = "";
-    ar[maximo+4] = "";
-
+    /*
     var divletra = "";
     for (i in ar) {
         divletra += "<p>" + ar[i] + "</p>" 
     }
-    document.getElementById("depois").innerHTML = divletra;
+    document.getElementById("depois").innerHTML = divletra; */
     mostraLetra();
 });
 
@@ -59,10 +77,10 @@ function mostraLetra() {
     if (count == 0) {document.getElementById("antes").innerHTML = "";}
     else {           document.getElementById("antes").innerHTML = "<p>" + ar[count-1] + "</p>";}
 
-    document.getElementById("depois").innerHTML = "<p>" + ar[count+1] + "</p>";
-    document.getElementById("depois").innerHTML += "<p>" + ar[count+2] + "</p>";
-    document.getElementById("depois").innerHTML += "<p>" + ar[count+3] + "</p>";
-    document.getElementById("depois").innerHTML += "<p>" + ar[count+4] + "</p>";    
+    document.getElementById("depois").innerHTML = "";
+    for (var k = count + 1; k <= maximo; k++) {
+        document.getElementById("depois").innerHTML += "<p>" + ar[k] + "</p>";
+    }
 }
 
 function proxima() {
