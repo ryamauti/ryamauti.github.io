@@ -1,46 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Karaoke</title>
-    <style>
-        body {
-            background-color: Black;
-            overflow: auto;            
-            color: white;
-        }
-        .button-container {
-            width: 520px;
-            overflow-y: auto;
-        }
-
-        .button-container > button {
-            font-family: 'Courier New', Courier, monospace;
-            width: 100px;
-            height: 50px;
-            float: left;
-            background-color: lightgray;   
-            margin: 15px;
-        }
-
-        #artistas {
-            float: left;
-            width: 260px;
-        }
-        
-        #musicas {
-            float: right;
-            width: 400px;
-        }
-    </style>  
+    <meta charset="UTF-8">    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Number Matching Game</title>
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="button-container" id="artistas">
+    <div class="game-container">
+        <div class="score-container">
+            <span>Score: </span>
+            <span id="score-value">0</span>
+        </div>
+        <div id="game-grid"></div>
+        <div class="button-container">
+            <button id="refill-button" class="game-button">Refill</button>
+            <button id="restart-button" class="game-button">Restart</button>
+        </div>
+        <div id="game-status" class="game-status"></div>
     </div>
-    <div class="button-container" id="musicas">
-    </div>
+    
+    <script type="module" src="app.js"></script>
 </body>
-<script src="indice.js"></script> 
 </html>
