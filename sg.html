@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sliding Block Game</title>
+    <style>
+        :root {
+            /* Grid dimensions are now dynamic, CSS variables might be less useful here */
+            /* --grid-rows: 10; */
+            /* --grid-cols: 8; */
+            --cell-size: min(7.5vh, 10vw); /* Base for calculation, actual size set by JS */
+            --grid-gap: 1px;
+            --wall-color: #4a4a4a; /* Dark gray */
+            --floor-color: #d3d3d3; /* Light gray */
+            --grid-line-color: #a0a0a0; /* Gray */
+            --red-door-color: #ffaaaa; /* Light red */
+            --green-door-color: #aaffaa; /* Light green */
+            --red-piece-color: #f07171;
+            --green-piece-color: #71f071;
+            --border-drag-color: white;
+            --win-bg-color: #c8e6c9; /* Light green */
+            --blank-color: #6c757d; /* Color for '.' blank space */
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+            font-family: sans-serif;
+            touch-action: none; /* Prevent default touch actions like scrolling */
+            transition: background-color 0.5s ease-in-out; /* For win state */
+            overflow: hidden; /* Prevent body scroll */
+        }
+
+        .game-container {
+            position: relative; /* Needed for absolute positioning of pieces */
+            display: grid;
+            /* Grid definition will be set by JS based on calculated CELL_SIZE_PX */
+            gap: var(--grid-gap);
+            background-color: var(--grid-line-color); /* Grid lines */
+            border: calc(var(--grid-gap) * 2) solid var(--grid-line-color); /* Ensure border matches gap */
+            /* Width/Height set by JS */
+            overflow: hidden; /* Hide any overflow */
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2); /* Add some depth */
+            border-radius: 5px; /* Slightly rounded corners */
+        }
+
+        .grid-cell {
+            background-color: var(--floor-color);
+            user-select: none; /* Prevent text selection */
+            /* Width/Height set by JS */
+            display: flex; /* For potential future content */
+            align-items: center;
+            justify-content: center;
+        }
+
+        .wall { background-color: var(--wall-color); }
+        /* Special style for '.' blank spaces, treated as walls but visually distinct */
+        .blank-space { background-color: var(--blank-color); }
+        .red-door { background-color: var(--red-door-color); }
+        .green-door { background-color: var(--green-door-color); }
+
+        .piece {
+            position: absolute;
+            display: grid; /* Use grid for complex shapes */
+            background-color: transparent; /* Parent is transparent */
+            /* cursor: grab; Applied to piece-cell instead */
+            transition: transform 0.05s linear, /* Faster, smoother movement */
+                        opacity 0.3s ease-out; /* Fade out animation */
+            z-index: 10; /* Pieces above grid */
+            touch-action: none; /* Allow dragging on touch */
+            box-sizing: border-box; /* Include border in size */
+            border-radius: 3px; /* Rounded corners for pieces */
+            overflow: hidden; /* Clip piece cells to rounded border */
+            pointer-events: none; /* Let clicks pass through to piece-cells */
+        }
+
+        .piece.dragging {
+            /* cursor: grabbing; Applied to document body during drag maybe? */
+            z-index: 20; /* Dragged piece above others */
+            /* White border applied via JS */
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3); /* Shadow when dragging */
+            pointer-events: auto; /* Re-enable pointer events for the piece being dragged */
+        }
+
+        .piece.fade-out {
+            opacity: 0;
+            pointer-events: none; /* Disable interaction during fade */
+            z-index: 5; /* Ensure it fades behind other pieces if needed */
+        }
+
+        /* Individual cells within a piece */
+        .piece-cell {
+            /* Width/Height set by JS */
+            box-sizing: border-box; /* Include border */
+            border: var(--grid-gap) solid rgba(0,0,0,0.15); /* Subtle border within piece */
+            pointer-events: auto; /* Cells are interactive */
+            cursor: grab; /* Grab cursor only on interactive cells */
+             /* Ensure cells don't overflow piece container */
+        }
+        /* Style transparent cells differently */
+        .piece-cell[style*="background-color: transparent"] {
+             cursor: default; /* No grab cursor on transparent parts */
+             pointer-events: none; /* Make transparent parts non-interactive */
+        }
+
+
+         /* Message Box for Win State */
+         #message-box {
+            position: fixed; /* Use fixed to overlay everything */
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.75);
+            color: white;
+            padding: 25px 45px;
+            border-radius: 12px;
+            font-size: 1.8em;
+            font-weight: bold;
+            z-index: 100;
+            display: none; /* Hidden by default */
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.4);
+         }
+
+         /* Style for win state */
+        body.win-state {
+             background-color: var(--win-bg-color);
+         }
+         body.win-state #message-box {
+             display: block;
+         }
+
+    </style>
+</head>
+<body>
+    <div class="game-container" id="game-container">
+        </div>
+     <div id="message-box">Victory!</div>
+
+    <script>
+        const gameContainer = document.getElementById('game-container');
+        const messageBox = document.getElementById('message-box');
+        // Grid dimensions are now derived from the template
+        let GRID_ROWS = 0;
+        let GRID_COLS = 0;
+        let CELL_SIZE_PX = 50; // Default fallback, will update dynamically
+        const GRID_GAP_PX = 1; // Assuming 1px gap from CSS
+
+        // --- Board Template ---
+        // . = blank space (unpassable, type 1, visually distinct wall)
+        // f = floor (passable, type 0)
+        // w = wall (unpassable, type 1)
+        // R = red door (passable for red pieces, type 2)
+        // G = green door (passable for green pieces, type 3)
+        const boardTemplate = `
+....GG...
+....GG...
+.wwwGGwww
+.wffffffw
+.wffffffw
+.wffffffw
+RRffwfffw
+RRffwfffw
+.wffwfffw
+.wffwfffw
+.wffwfffw
+.wwwwwwww
+`.trim(); // Use trim() to remove leading/trailing whitespace/newlines
+
+        const gridState = []; // 0: floor, 1: wall/blank, 2: red door, 3: green door
+        const pieces = []; // Array to hold piece objects
+
+        let draggedPiece = null;
+        let startClientX = 0; // Raw clientX at drag start
+        let startClientY = 0; // Raw clientY at drag start
+        let startPieceX = 0; // Grid X at drag start
+        let startPieceY = 0; // Grid Y at drag start
+        let currentGridX = 0; // Current grid X during drag
+        let currentGridY = 0; // Current grid Y during drag
+
+        // --- Piece Definitions ---
+        // NOTE: Start positions might need adjustment based on the new board layout
+        const pieceDefs = [
+            {
+                id: 'red-square-1',
+                color: 'red',
+                shape: [[1, 0], [1, 1]],
+                startX: 6, // Check if (3, 4) is valid on the new board ('f') - Yes
+                startY: 9,
+                cssClass: 'red-square',
+                pieceColorVar: '--red-piece-color',
+                doorType: 2, // Matches 'R' (type 2)
+            },
+            {
+                id: 'red-l-1',
+                color: 'red',
+                shape: [[1, 1], [0, 1]],
+                startX: 6, // Check if (3, 4) is valid on the new board ('f') - Yes
+                startY: 7,
+                cssClass: 'red-square',
+                pieceColorVar: '--red-piece-color',
+                doorType: 2, // Matches 'R' (type 2)
+            },
+            {
+                id: 'red-l-3',
+                color: 'red',
+                shape: [[1, 1], [0, 1]],
+                startX: 4, // Check if (3, 4) is valid on the new board ('f') - Yes
+                startY: 5,
+                cssClass: 'red-square',
+                pieceColorVar: '--red-piece-color',
+                doorType: 2, // Matches 'R' (type 2)
+            },
+            {
+                id: 'green-b-2',
+                color: 'green',
+                shape: [[1, 1], [1, 1]],
+                startX: 1, // Check if (1, 1) is valid on the new board ('f') - No, it's '.' (blank/wall)
+                startY: 1, // Let's move it to (1, 3) which is 'f'
+                startX_new: 6, // New start position
+                startY_new: 5, // New start position
+                cssClass: 'green-l',
+                pieceColorVar: '--green-piece-color',
+                doorType: 3, // Matches 'G' (type 3)
+            },
+            {
+                id: 'red-l-2',
+                color: 'red',
+                shape: [[1, 1], [1, 0]],
+                startX: 6, // Check if (3, 4) is valid on the new board ('f') - Yes
+                startY: 3,
+                cssClass: 'red-square',
+                pieceColorVar: '--red-piece-color',
+                doorType: 2, // Matches 'R' (type 2)
+            },
+            {
+                id: 'green-l-1',
+                color: 'green',
+                shape: [[1, 1], [1, 0], [1, 0]],
+                startX: 1, // Check if (1, 1) is valid on the new board ('f') - No, it's '.' (blank/wall)
+                startY: 1, // Let's move it to (1, 3) which is 'f'
+                startX_new: 5, // New start position
+                startY_new: 8, // New start position
+                cssClass: 'green-l',
+                pieceColorVar: '--green-piece-color',
+                doorType: 3, // Matches 'G' (type 3)
+            },
+            {
+                id: 'green-b-1',
+                color: 'green',
+                shape: [[1, 1], [1, 1], [1, 1]],
+                startX: 1, // Check if (1, 1) is valid on the new board ('f') - No, it's '.' (blank/wall)
+                startY: 1, // Let's move it to (1, 3) which is 'f'
+                startX_new: 2, // New start position
+                startY_new: 3, // New start position
+                cssClass: 'green-l',
+                pieceColorVar: '--green-piece-color',
+                doorType: 3, // Matches 'G' (type 3)
+            },
+        ];
+         // Update piece start positions based on potential changes
+         pieceDefs.forEach(p => {
+             if (p.startX_new !== undefined) p.startX = p.startX_new;
+             if (p.startY_new !== undefined) p.startY = p.startY_new;
+         });
+
+
+        // --- Grid Initialization ---
+        function initializeGrid() {
+            gameContainer.innerHTML = ''; // Clear previous grid if any
+            gridState.length = 0; // Clear grid state array
+
+            // --- Parse Board Template ---
+            const templateRows = boardTemplate.split('\n');
+            GRID_ROWS = templateRows.length;
+            GRID_COLS = templateRows[0].length; // Assume all rows have the same length
+
+            if (GRID_ROWS === 0 || GRID_COLS === 0) {
+                console.error("Board template is empty or invalid!");
+                return;
+            }
+            // --- End Parsing ---
+
+            // Calculate cell size in pixels dynamically based on container space & new dimensions
+            const availableWidth = window.innerWidth * 0.9;
+            const availableHeight = window.innerHeight * 0.9;
+            const cellWidth = Math.floor((availableWidth - (GRID_COLS + 1) * GRID_GAP_PX) / GRID_COLS);
+            const cellHeight = Math.floor((availableHeight - (GRID_ROWS + 1) * GRID_GAP_PX) / GRID_ROWS);
+            CELL_SIZE_PX = Math.max(10, Math.min(cellWidth, cellHeight));
+
+             // Calculate actual grid dimensions
+             const gridWidth = GRID_COLS * CELL_SIZE_PX + (GRID_COLS + 1) * GRID_GAP_PX;
+             const gridHeight = GRID_ROWS * CELL_SIZE_PX + (GRID_ROWS + 1) * GRID_GAP_PX;
+
+             // Apply styles to container
+             gameContainer.style.width = `${gridWidth}px`;
+             gameContainer.style.height = `${gridHeight}px`;
+             gameContainer.style.gridTemplateRows = `repeat(${GRID_ROWS}, ${CELL_SIZE_PX}px)`;
+             gameContainer.style.gridTemplateColumns = `repeat(${GRID_COLS}, ${CELL_SIZE_PX}px)`;
+
+            // Create grid cells based on the template
+            for (let r = 0; r < GRID_ROWS; r++) {
+                gridState[r] = [];
+                if (templateRows[r].length !== GRID_COLS) {
+                     console.error(`Template row ${r} has inconsistent length! Expected ${GRID_COLS}, got ${templateRows[r].length}`);
+                     // Handle error appropriately, maybe skip row or stop
+                     continue;
+                }
+                for (let c = 0; c < GRID_COLS; c++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('grid-cell');
+                    cell.style.width = `${CELL_SIZE_PX}px`;
+                    cell.style.height = `${CELL_SIZE_PX}px`;
+                    cell.dataset.row = r;
+                    cell.dataset.col = c;
+
+                    const char = templateRows[r][c];
+                    let cellType = 0; // Default to floor
+
+                    // Map character to cell type and CSS class
+                    switch (char) {
+                        case 'f':
+                            cellType = 0; // Floor
+                            // No extra class needed, default background is floor
+                            break;
+                        case 'w':
+                            cellType = 1; // Wall
+                            cell.classList.add('wall');
+                            break;
+                        case '.':
+                            cellType = 1; // Blank Space (treat as Wall logically)
+                            cell.classList.add('blank-space'); // Visually distinct wall
+                            break;
+                        case 'R':
+                            cellType = 2; // Red Door
+                            cell.classList.add('red-door');
+                            break;
+                        case 'G':
+                            cellType = 3; // Green Door
+                            cell.classList.add('green-door');
+                            break;
+                        default:
+                            console.warn(`Unknown character '${char}' in template at (${r}, ${c}). Treating as floor.`);
+                            cellType = 0; // Treat unknown as floor
+                    }
+
+                    gridState[r][c] = cellType;
+                    gameContainer.appendChild(cell);
+                }
+            }
+        }
+
+        // --- Piece Creation ---
+        function createPieceElement(pieceData) {
+            // Check if start position is valid on the new board
+            let startIsValid = true;
+            for(let r=0; r < pieceData.shape.length; r++) {
+                for (let c=0; c < pieceData.shape[r].length; c++) {
+                    if (pieceData.shape[r][c] === 1) {
+                        const checkR = pieceData.startY + r;
+                        const checkC = pieceData.startX + c;
+                        if (checkR < 0 || checkR >= GRID_ROWS || checkC < 0 || checkC >= GRID_COLS || gridState[checkR][checkC] !== 0) { // Must start on floor (type 0)
+                            startIsValid = false;
+                            break;
+                        }
+                    }
+                }
+                if (!startIsValid) break;
+            }
+
+            if (!startIsValid) {
+                console.error(`Piece ${pieceData.id} has invalid start position (${pieceData.startX}, ${pieceData.startY}) on the current board layout. Skipping piece.`);
+                return; // Don't create the piece if start pos is invalid
+            }
+
+
+            const pieceElement = document.createElement('div');
+            pieceElement.id = pieceData.id;
+            pieceElement.classList.add('piece'); // Base class
+            pieceElement.dataset.color = pieceData.color;
+            pieceElement.dataset.doorType = pieceData.doorType; // Store door type on element
+
+             // Calculate piece dimensions
+            const pieceWidth = pieceData.shape[0].length;
+            const pieceHeight = pieceData.shape.length;
+            const pieceWidthPx = pieceWidth * CELL_SIZE_PX + (pieceWidth - 1) * GRID_GAP_PX;
+            const pieceHeightPx = pieceHeight * CELL_SIZE_PX + (pieceHeight - 1) * GRID_GAP_PX;
+
+            pieceElement.style.width = `${pieceWidthPx}px`;
+            pieceElement.style.height = `${pieceHeightPx}px`;
+            pieceElement.style.gridTemplateRows = `repeat(${pieceHeight}, ${CELL_SIZE_PX}px)`;
+            pieceElement.style.gridTemplateColumns = `repeat(${pieceWidth}, ${CELL_SIZE_PX}px)`;
+            pieceElement.style.gap = `${GRID_GAP_PX}px`; // Use gap for internal spacing
+
+
+            // Create individual cells for the piece shape
+            for (let r = 0; r < pieceHeight; r++) {
+                for (let c = 0; c < pieceWidth; c++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('piece-cell');
+                    cell.style.width = `${CELL_SIZE_PX}px`; // Set size explicitly
+                    cell.style.height = `${CELL_SIZE_PX}px`;
+
+                     if (pieceData.shape[r][c] === 1) {
+                        // Apply color to filled cells
+                        cell.style.backgroundColor = `var(${pieceData.pieceColorVar})`;
+                        // Add event listeners ONLY to colored cells
+                        cell.addEventListener('mousedown', handleDragStart);
+                        cell.addEventListener('touchstart', handleDragStart, { passive: false });
+                    } else {
+                        // Make non-shape parts transparent and non-interactive
+                        cell.style.backgroundColor = 'transparent';
+                        cell.style.border = 'none';
+                    }
+                    pieceElement.appendChild(cell);
+                }
+            }
+
+            // Store piece info
+            const pieceObj = {
+                element: pieceElement,
+                id: pieceData.id,
+                x: pieceData.startX,
+                y: pieceData.startY,
+                width: pieceWidth,
+                height: pieceHeight,
+                shape: pieceData.shape,
+                color: pieceData.color,
+                doorType: pieceData.doorType, // Store door type in object
+                isDragging: false,
+                isActive: true // Track if piece is still on board
+            };
+            pieces.push(pieceObj);
+
+            positionPiece(pieceObj); // Set initial position
+            gameContainer.appendChild(pieceElement);
+        }
+
+        function positionPiece(pieceObj) {
+            if (!pieceObj || !pieceObj.element) return;
+            // Calculate pixel position including gaps
+            const xPx = pieceObj.x * (CELL_SIZE_PX + GRID_GAP_PX);
+            const yPx = pieceObj.y * (CELL_SIZE_PX + GRID_GAP_PX);
+            pieceObj.element.style.transform = `translate(${xPx}px, ${yPx}px)`;
+        }
+
+        // --- Drag and Drop Logic (handleDragStart, handleDragMove, handleDragEnd) ---
+        // Remains largely the same, relies on gridState which is now template-driven
+        function handleDragStart(e) {
+            const targetCell = e.currentTarget;
+            const pieceElement = targetCell.closest('.piece');
+            if (!pieceElement) return;
+            if (e.type === 'touchstart') e.preventDefault();
+
+            draggedPiece = pieces.find(p => p.id === pieceElement.id);
+            if (!draggedPiece || !draggedPiece.isActive) return;
+
+            draggedPiece.isDragging = true;
+            draggedPiece.element.classList.add('dragging');
+            draggedPiece.element.style.border = `2px solid var(--border-drag-color)`;
+
+            startClientX = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX;
+            startClientY = e.type === 'touchstart' ? e.touches[0].clientY : e.clientY;
+            startPieceX = draggedPiece.x;
+            startPieceY = draggedPiece.y;
+            currentGridX = startPieceX;
+            currentGridY = startPieceY;
+
+            document.addEventListener('mousemove', handleDragMove);
+            document.addEventListener('mouseup', handleDragEnd);
+            document.addEventListener('touchmove', handleDragMove, { passive: false });
+            document.addEventListener('touchend', handleDragEnd);
+        }
+
+        function handleDragMove(e) {
+            if (!draggedPiece || !draggedPiece.isDragging) return;
+             e.preventDefault();
+
+            const clientX = e.type === 'touchmove' ? e.touches[0].clientX : e.clientX;
+            const clientY = e.type === 'touchmove' ? e.touches[0].clientY : e.clientY;
+
+            const deltaX = clientX - startClientX;
+            const deltaY = clientY - startClientY;
+
+            const intendedGridX = startPieceX + Math.round(deltaX / (CELL_SIZE_PX + GRID_GAP_PX));
+            const intendedGridY = startPieceY + Math.round(deltaY / (CELL_SIZE_PX + GRID_GAP_PX));
+
+            const diffX = intendedGridX - currentGridX;
+            const diffY = intendedGridY - currentGridY;
+
+            let moved = false;
+
+            if (Math.abs(diffX) > Math.abs(diffY)) {
+                if (diffX !== 0) {
+                    const stepX = Math.sign(diffX);
+                    const nextX = currentGridX + stepX;
+                    if (isValidMove(draggedPiece, nextX, currentGridY)) {
+                        currentGridX = nextX; moved = true;
+                    }
+                }
+            } else {
+                if (diffY !== 0) {
+                    const stepY = Math.sign(diffY);
+                    const nextY = currentGridY + stepY;
+                    if (isValidMove(draggedPiece, currentGridX, nextY)) {
+                        currentGridY = nextY; moved = true;
+                    }
+                }
+            }
+
+            if (!moved) {
+                 if (Math.abs(diffX) <= Math.abs(diffY)) {
+                     if (diffX !== 0) {
+                        const stepX = Math.sign(diffX);
+                        const nextX = currentGridX + stepX;
+                        if (isValidMove(draggedPiece, nextX, currentGridY)) {
+                            currentGridX = nextX; moved = true;
+                        }
+                    }
+                 } else {
+                     if (diffY !== 0) {
+                        const stepY = Math.sign(diffY);
+                        const nextY = currentGridY + stepY;
+                        if (isValidMove(draggedPiece, currentGridX, nextY)) {
+                            currentGridY = nextY; moved = true;
+                        }
+                    }
+                 }
+            }
+
+            if(draggedPiece.x !== currentGridX || draggedPiece.y !== currentGridY) {
+                 draggedPiece.x = currentGridX;
+                 draggedPiece.y = currentGridY;
+                 positionPiece(draggedPiece);
+            }
+        }
+
+        function handleDragEnd(e) {
+            if (!draggedPiece || !draggedPiece.isDragging) return;
+
+            draggedPiece.isDragging = false;
+            draggedPiece.element.classList.remove('dragging');
+            draggedPiece.element.style.border = 'none';
+
+            document.removeEventListener('mousemove', handleDragMove);
+            document.removeEventListener('mouseup', handleDragEnd);
+            document.removeEventListener('touchmove', handleDragMove);
+            document.removeEventListener('touchend', handleDragEnd);
+
+            if (isOnMatchingDoor(draggedPiece)) {
+                removePiece(draggedPiece);
+            }
+            draggedPiece = null;
+        }
+
+
+        // --- Collision and Validation ---
+        // isValidMove now relies on gridState populated from the template
+        function isValidMove(piece, targetX, targetY) {
+            const otherPieceOccupiedCells = new Set();
+            pieces.forEach(otherPiece => {
+                if (otherPiece.isActive && otherPiece.id !== piece.id) {
+                    for (let r = 0; r < otherPiece.height; r++) {
+                        for (let c = 0; c < otherPiece.width; c++) {
+                            if (otherPiece.shape[r][c] === 1) {
+                                otherPieceOccupiedCells.add(`${otherPiece.y + r},${otherPiece.x + c}`);
+                            }
+                        }
+                    }
+                }
+            });
+
+            for (let r = 0; r < piece.height; r++) {
+                for (let c = 0; c < piece.width; c++) {
+                    if (piece.shape[r][c] === 1) {
+                        const gridR = targetY + r;
+                        const gridC = targetX + c;
+
+                        // 1. Check Grid Bounds (using dynamic GRID_ROWS/COLS)
+                        if (gridR < 0 || gridR >= GRID_ROWS || gridC < 0 || gridC >= GRID_COLS) {
+                            return false;
+                        }
+
+                        // 2. Check grid cell type (Walls, Blanks, Doors)
+                        const cellType = gridState[gridR][gridC];
+
+                        // Check Walls/Blanks (Type 1)
+                        if (cellType === 1) {
+                            return false;
+                        }
+
+                        // Check Doors (Types 2 and 3)
+                        if (cellType === 2 || cellType === 3) {
+                            // If the door type does NOT match the piece's required door type, treat as wall
+                            if (cellType !== piece.doorType) {
+                                return false;
+                            }
+                        }
+
+                        // 3. Check for other pieces
+                        if (otherPieceOccupiedCells.has(`${gridR},${gridC}`)) {
+                            return false;
+                        }
+                    }
+                }
+            }
+            return true; // Move is valid
+        }
+
+        // --- Door Logic (Check on Drop) ---
+        // isOnMatchingDoor relies on gridState populated from the template
+        function isOnMatchingDoor(piece) {
+             if (!piece || !piece.isActive) return false;
+            for (let r = 0; r < piece.height; r++) {
+                for (let c = 0; c < piece.width; c++) {
+                    if (piece.shape[r][c] === 1) {
+                        const gridR = piece.y + r;
+                        const gridC = piece.x + c;
+                        if (gridR < 0 || gridR >= GRID_ROWS || gridC < 0 || gridC >= GRID_COLS) {
+                            return false;
+                        }
+                        // Check if the grid cell type matches the piece's door type
+                        if (gridState[gridR][gridC] !== piece.doorType) {
+                            return false;
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+
+        function removePiece(piece) {
+            if (!piece || !piece.isActive) return;
+            piece.isActive = false;
+            piece.element.classList.add('fade-out');
+            setTimeout(() => {
+                if (piece.element.parentNode) {
+                    piece.element.parentNode.removeChild(piece.element);
+                }
+            }, 300);
+            checkWinCondition();
+        }
+
+        // --- Win Condition ---
+        function checkWinCondition() {
+            const activePieces = pieces.filter(p => p.isActive).length;
+            if (activePieces === 0) {
+                document.body.classList.add('win-state');
+            }
+        }
+
+        // --- Game Setup ---
+        function setupGame() {
+             // Clear previous pieces if any
+             pieces.forEach(p => {
+                if (p.element && p.element.parentNode) {
+                    p.element.parentNode.removeChild(p.element);
+                }
+             });
+             pieces.length = 0; // Clear pieces array
+
+            initializeGrid(); // Create the grid cells and size container *based on template*
+            // Only create pieces *after* gridState is populated
+            pieceDefs.forEach(createPieceElement);
+            document.body.classList.remove('win-state');
+            messageBox.style.display = 'none';
+        }
+
+        // --- Debounced Resize Handler ---
+        let resizeTimeout;
+        function handleResize() {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                 console.log("Resizing game...");
+                 setupGame(); // Re-initialize grid and pieces
+            }, 250);
+        }
+
+        // --- Initial Load and Resize Handling ---
+        window.addEventListener('load', setupGame);
+        window.addEventListener('resize', handleResize);
+
+    </script>
+</body>
+</html>
